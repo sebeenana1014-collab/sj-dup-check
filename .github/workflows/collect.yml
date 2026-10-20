@@ -1,0 +1,40 @@
+name: S저널 기사 수집
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      backfill:
+        description: "최근 45일치 전체 다시 수집"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q requests beautifulsoup4
+      - name: 기사 수집
+        run: |
+          if [ "${{ inputs.backfill }}" = "true" ]; then python collect.py --backfill; else python collect.py; fi
+      - name: 변경분 저장
+        run: |
+          git config user.name "sj-collector"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/articles.json
+          git diff --cached --quiet && echo "변경 없음" && exit 0
+          git commit -m "기사 수집 $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M')"
+          git push

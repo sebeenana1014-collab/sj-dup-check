@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>S저널 중복기사 검사</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=Nanum+Myeongjo:wght@700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: 데스크 검사대 — 제호 띠, 원고 입력(좌)·판정(우), 아래에 최근 기사 목록 */
+:root {
+  --bg: #f3f5f7; --surface: #ffffff; --ink: #17202b; --muted: #5b6776; --line: #d9dfe6;
+  --accent: #1f4e8c; --accent-soft: #e4ecf7;
+  --ok: #1d7a4c; --ok-soft: #e3f3ea; --warn: #9a6200; --warn-soft: #fbf0d9; --bad: #b3261e; --bad-soft: #fbe5e3;
+  --f-display: "Nanum Myeongjo", "Batang", serif;
+  --f-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #12161c; --surface: #1a2029; --ink: #e6ebf1; --muted: #9aa6b4; --line: #2c3541;
+  --accent: #8db4ec; --accent-soft: #1f2d42; --ok: #6fcf9a; --ok-soft: #173326; --warn: #f0c063; --warn-soft: #362a12; --bad: #f2948d; --bad-soft: #3b1d1b;
+  color-scheme: dark; } }
+:root[data-theme="dark"] {
+  --bg: #12161c; --surface: #1a2029; --ink: #e6ebf1; --muted: #9aa6b4; --line: #2c3541;
+  --accent: #8db4ec; --accent-soft: #1f2d42; --ok: #6fcf9a; --ok-soft: #173326; --warn: #f0c063; --warn-soft: #362a12; --bad: #f2948d; --bad-soft: #3b1d1b;
+  color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.6; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+header { background: var(--surface); border-bottom: 1px solid var(--line); }
+header .wrap { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 24px; padding-block: 18px 14px; }
+h1 { font-family: var(--f-display); font-weight: 800; font-size: 26px; margin: 0; line-height: 1.2; letter-spacing: -0.01em; }
+.sub { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.feed { font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.feed::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.feed[data-s="ok"]::before { background: var(--ok); } .feed[data-s="bad"]::before { background: var(--bad); }
+main { padding-block: 24px 48px; }
+.grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; align-items: start; }
+@media (max-width: 820px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px; min-width: 0; }
+.panel h2 { font-size: 17px; margin: 0 0 4px; }
+.lead { margin: 0 0 14px; color: var(--muted); font-size: 13.5px; }
+textarea { font: inherit; font-size: 14px; line-height: 1.55; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 10px; width: 100%; min-height: 300px; resize: vertical; }
+input[type="text"] { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 7px 10px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+.btn { font: inherit; font-weight: 600; font-size: 14px; border-radius: 6px; padding: 9px 16px; border: 1px solid var(--accent); background: var(--accent); color: #fff; cursor: pointer; }
+.btn.ghost { background: transparent; color: var(--accent); }
+.btn.small { padding: 5px 10px; font-size: 13px; }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.link { font: inherit; font-size: 13px; color: var(--muted); background: none; border: 0; padding: 4px 2px; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hint { font-size: 12.5px; color: var(--muted); }
+.empty { color: var(--muted); font-size: 14px; padding: 28px 8px; text-align: center; border: 1px dashed var(--line); border-radius: 8px; }
+.verdict { border-radius: 8px; padding: 14px 16px; margin-bottom: 14px; border-left: 4px solid; }
+.verdict h3 { margin: 0 0 4px; font-size: 16px; } .verdict p { margin: 0; font-size: 14px; }
+.v-ok { background: var(--ok-soft); border-color: var(--ok); } .v-ok h3 { color: var(--ok); }
+.v-warn { background: var(--warn-soft); border-color: var(--warn); } .v-warn h3 { color: var(--warn); }
+.v-bad { background: var(--bad-soft); border-color: var(--bad); } .v-bad h3 { color: var(--bad); }
+.match { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 4px 14px; }
+.score { grid-row: span 3; font-family: var(--f-mono); font-size: 22px; line-height: 1; text-align: center; padding-top: 4px; font-variant-numeric: tabular-nums; }
+.score small { display: block; font-size: 10.5px; color: var(--muted); margin-top: 4px; font-family: var(--f-body); }
+.score.hi { color: var(--bad); } .score.mid { color: var(--warn); }
+.match .t { font-weight: 600; overflow-wrap: anywhere; } .match .t a { color: inherit; }
+.meta { font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.pill { display: inline-block; font-size: 12px; font-weight: 600; border-radius: 4px; padding: 1px 7px; }
+.p-pub { background: var(--bad-soft); color: var(--bad); } .p-local { background: var(--warn-soft); color: var(--warn); }
+.mono { font-family: var(--f-mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+details.why { font-size: 13px; color: var(--muted); grid-column: 2; } details.why summary { cursor: pointer; }
+details.why ul { margin: 4px 0 0; padding-left: 18px; }
+.recent { margin-top: 24px; }
+.tools { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.entry { border-top: 1px solid var(--line); padding: 9px 0; display: grid; grid-template-columns: 110px minmax(0, 1fr) 90px; gap: 4px 14px; font-size: 14px; }
+.entry:first-child { border-top: 0; }
+.entry a { color: var(--ink); text-decoration: none; font-weight: 500; overflow-wrap: anywhere; } .entry a:hover { text-decoration: underline; }
+@media (max-width: 560px) { .entry { grid-template-columns: minmax(0, 1fr); } }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(20px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--surface); padding: 10px 18px; border-radius: 8px; font-size: 14px; z-index: 20; max-width: calc(100% - 32px); }
+.howto { font-size: 13px; color: var(--muted); margin-top: 18px; } .howto ol { margin: 6px 0 0; padding-left: 20px; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div>
+      <h1>S저널 중복기사 검사</h1>
+      <p class="sub">승인 전에 원고를 넣으면, 최근 45일 동안 S저널에 나간 기사 중 같은 보도자료가 있는지 찾습니다.</p>
+    </div>
+    <div class="feed" id="feed" data-s="wait">기사 목록 불러오는 중</div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="grid">
+    <div class="panel">
+      <h2>검사할 원고</h2>
+      <p class="lead">기사 원고나 받은 보도자료를 그대로 붙여넣으세요. 제목이 달라도, 문장을 절반 넘게 바꿨어도 금액·인원·면적 같은 사실이 같으면 잡습니다. 원고는 이 브라우저 밖으로 나가지 않습니다.</p>
+      <textarea id="draft" placeholder="여기에 붙여넣기"></textarea>
+      <div class="row">
+        <button class="btn" id="btn-check">중복 검사</button>
+        <button class="link" id="btn-clear">지우기</button>
+      </div>
+      <div class="howto">
+        <b>이렇게 씁니다</b>
+        <ol>
+          <li>기자가 올린 원고를 승인하기 전에 여기에 붙여넣고 검사</li>
+          <li>"이미 나간 보도자료"가 뜨면 보류, 링크로 먼저 나간 기사를 확인</li>
+          <li>괜찮으면 <b>승인함</b>을 눌러 두면, 10분 뒤 사이트에서 수집되기 전까지도 다음 원고와 비교됩니다</li>
+        </ol>
+      </div>
+    </div>
+    <div class="panel" id="result" aria-live="polite">
+      <h2>판정</h2>
+      <div class="empty">원고를 넣고 <b>중복 검사</b>를 누르세요.</div>
+    </div>
+  </section>
+
+  <section class="panel recent">
+    <div class="tools">
+      <h2 style="margin:0">최근 수집된 기사 <span class="hint" id="recent-count"></span></h2>
+      <input type="text" id="q" placeholder="회사명·기자·제목 검색" style="max-width:260px;width:100%">
+    </div>
+    <div id="recent"><div class="empty">불러오는 중…</div></div>
+  </section>
+</main>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+// ───── 유사도 판별: 본문 3글자 조각 + 사실 지문(숫자·영문 고유명사) ─────
+const UNIT = '(?:조|억|만|천|백)?\\s*(?:원|달러|명|개|%|퍼센트|배|건|곳|대|가구|세대|㎡|평|톤|km|개사|개국|년|월|일|분기|위|호|층|동|MW|GW|kW)?';
+const NUM_RE = new RegExp('\\d[\\d,.]*' + UNIT, 'g');
+function clean(t) {
+  return String(t || '').replace(/https?:\/\/\S+/g, ' ').replace(/[\w.+-]+@[\w-]+\.[\w.]+/g, ' ')
+    .replace(/\[[^\]]{0,40}\]|\([^)]{0,40}(사진|제공)[^)]{0,20}\)/g, ' ').replace(/[^\p{Script=Hangul}A-Za-z0-9%.,\s]/gu, ' ');
+}
+const STOP = new Set(['밝혔다','했다고','말했다','라고','이라고','예정이','있다고','한다고','고밝혔','다고밝','설명했','강조했','이번에','대표는','관계자','관계자는','계자는','에따르','따르면','것으로','으로나','로나타','나타났','했으며','하였다','있도록','위해서','이다고','지난해','올해는']);
+function grams(t) { const s = clean(t).replace(/[\s.,%]/g, ''); const g = new Set(); for (let i = 0; i + 3 <= s.length; i++) { const x = s.slice(i, i + 3); if (!STOP.has(x) && !/^\d+$/.test(x)) g.add(x); } return g; }
+function facts(t) {
+  const c = clean(t), f = new Set();
+  for (const m of c.matchAll(NUM_RE)) { const v = m[0].replace(/[\s,]/g, '').replace(/\.$/, ''); if (/^\d{1,2}(일|월|분기)$/.test(v)) continue; if (v.replace(/\D/g, '').length >= 2 || /[억만조%명]/.test(v)) f.add(v); }
+  for (const m of c.matchAll(/[A-Za-z][A-Za-z0-9&-]{1,}/g)) f.add(m[0].toUpperCase());
+  return f;
+}
+function fingerprint(t) { return { g: grams(t), f: facts(t) }; }
+function overlap(a, b) { if (!a.size || !b.size) return 0; let n = 0; const [s, l] = a.size < b.size ? [a, b] : [b, a]; for (const x of s) if (l.has(x)) n++; return n / s.size; }
+function shared(a, b) { const out = []; for (const x of a) if (b.has(x)) out.push(x); return out; }
+function score(fa, fb) { const g = overlap(fa.g, fb.g); const f = Math.min(fa.f.size, fb.f.size) >= 3 ? overlap(fa.f, fb.f) : null; return Math.round((f === null ? g : 0.55 * g + 0.45 * f) * 100); }
+const HI = 45, MID = 25;
+
+// ───── 데이터 ─────
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+let articles = [], fps = new Map(), local = [];
+function toast(m) { const t = $('toast'); t.textContent = m; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, 2600); }
+function fpOf(a) { if (!fps.has(a.id)) fps.set(a.id, fingerprint(a.body)); return fps.get(a.id); }
+function loadLocal() { try { local = JSON.parse(localStorage.getItem('sj-approved') || '[]'); } catch (_) { local = []; } const cut = Date.now() - 3 * 86400e3; local = local.filter(x => x.ts > cut); }
+function saveLocal() { try { localStorage.setItem('sj-approved', JSON.stringify(local)); } catch (_) {} }
+
+async function loadFeed() {
+  const el = $('feed');
+  try {
+    const r = await fetch('articles.json?t=' + Math.floor(Date.now() / 60000), { cache: 'no-store' });
+    if (!r.ok) throw new Error(r.status);
+    const j = await r.json();
+    articles = j.articles || [];
+    el.dataset.s = 'ok'; el.textContent = `기사 ${articles.length}건 · ${j.updated} 수집`;
+    const age = (Date.now() - new Date(j.updated.replace(' ', 'T') + '+09:00').getTime()) / 60000;
+    if (age > 90) { el.dataset.s = 'bad'; el.textContent += ` (${Math.round(age / 60)}시간 전, 수집 지연)`; }
+  } catch (e) {
+    el.dataset.s = 'bad'; el.textContent = '기사 목록을 불러오지 못했습니다';
+  }
+  renderRecent();
+}
+
+// ───── 검사 ─────
+let last = null;
+function check() {
+  const body = $('draft').value.trim(), box = $('result');
+  if (body.length < 40) { box.innerHTML = '<h2>판정</h2><div class="verdict v-warn"><h3>원고가 너무 짧습니다</h3><p>원고 전체를 붙여넣어야 비교할 수 있습니다.</p></div>'; return; }
+  const q = fingerprint(body);
+  const pool = [...articles.map(a => ({ a, kind: 'pub' })), ...local.map(a => ({ a, kind: 'local' }))];
+  const ms = pool.map(x => ({ ...x, s: score(q, fpOf(x.a)) })).filter(m => m.s >= MID).sort((a, b) => b.s - a.s).slice(0, 6);
+  last = { body, ms };
+  const top = ms.find(m => m.s >= HI);
+  let v;
+  if (top && top.kind === 'pub') v = `<div class="verdict v-bad"><h3>승인 보류: 이미 나간 보도자료입니다</h3><p>${esc(top.a.date)}에 ${esc(top.a.reporter || '')} 기자 이름으로 출고된 기사와 같은 보도자료로 보입니다. 이대로 승인하면 중복 전송입니다.</p></div>`;
+  else if (top) v = `<div class="verdict v-bad"><h3>승인 보류: 방금 승인한 원고와 같은 보도자료입니다</h3><p>${new Date(top.a.ts).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}에 이 화면에서 승인한 원고(${esc(top.a.reporter || '기자 미상')})와 겹칩니다. 아직 사이트에 수집되기 전일 수 있습니다.</p></div>`;
+  else if (ms.length) v = `<div class="verdict v-warn"><h3>비슷한 기사가 있습니다. 확인 후 승인하세요</h3><p>같은 보도자료라고 단정할 정도는 아닙니다. 아래 기사를 열어 비교해 보세요.</p></div>`;
+  else v = `<div class="verdict v-ok"><h3>최근 45일 기사 중 같은 보도자료가 없습니다</h3><p>승인해도 됩니다.</p></div>`;
+  const approve = (!top) ? `<div class="row" style="margin:0 0 16px"><input type="text" id="rep" placeholder="쓴 기자 (선택)" style="width:150px"><button class="btn ghost" id="btn-approve">승인함으로 기록</button><span class="hint">사이트에 수집될 때까지 이 브라우저에서 기억합니다</span></div>` : '';
+  box.innerHTML = '<h2>판정</h2>' + v + approve + (ms.length ? '<p class="hint" style="margin:0 0 8px">비슷한 기사</p>' + ms.map(m => card(m, q)).join('') : '');
+  const b = $('btn-approve'); if (b) b.onclick = () => {
+    local.unshift({ id: 'local-' + Date.now(), title: body.split('\n').find(s => s.trim()).slice(0, 70), body, reporter: $('rep').value.trim(), ts: Date.now() });
+    saveLocal(); toast('승인함으로 기록했습니다'); check();
+  };
+}
+function card(m, q) {
+  const a = m.a, f = fpOf(a), sf = shared(q.f, f.f).slice(0, 12);
+  const when = m.kind === 'pub' ? a.date : new Date(a.ts).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' 승인';
+  return `<div class="match">
+    <div class="score ${m.s >= HI ? 'hi' : 'mid'}">${m.s}<small>${m.s >= HI ? '같은 자료' : '의심'}</small></div>
+    <div class="t">${m.kind === 'pub' ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a>` : esc(a.title)}</div>
+    <div class="meta"><span class="pill ${m.kind === 'pub' ? 'p-pub' : 'p-local'}">${m.kind === 'pub' ? '출고됨' : '방금 승인'}</span><span>${esc(a.reporter || '기자 미상')}${a.reporter ? ' 기자' : ''}</span><span class="mono">${esc(when)}</span></div>
+    <details class="why"><summary>겹치는 사실 ${sf.length}개</summary><ul>${sf.map(x => `<li>${esc(x)}</li>`).join('') || '<li>숫자·고유명사 겹침 없음 (문장 유사)</li>'}</ul></details>
+  </div>`;
+}
+
+// ───── 최근 기사 ─────
+function renderRecent() {
+  const q = $('q').value.trim();
+  const list = articles.filter(a => !q || (a.title + a.reporter + a.body.slice(0, 300)).includes(q)).slice(0, 200);
+  $('recent-count').textContent = q ? `${list.length}건 검색` : `최근 200건`;
+  $('recent').innerHTML = list.length ? list.map(a => `<div class="entry"><span class="mono">${esc(a.date)}</span><a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a><span class="hint">${esc(a.reporter || '')}</span></div>`).join('')
+    : '<div class="empty">표시할 기사가 없습니다.</div>';
+}
+$('q').addEventListener('input', renderRecent);
+$('btn-check').onclick = check;
+$('btn-clear').onclick = () => { $('draft').value = ''; $('result').innerHTML = '<h2>판정</h2><div class="empty">원고를 넣고 <b>중복 검사</b>를 누르세요.</div>'; };
+loadLocal(); loadFeed();
+setInterval(loadFeed, 5 * 60 * 1000);
+</script>
+</body>
+</html>
