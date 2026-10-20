@@ -12,14 +12,18 @@ from pathlib import Path
 import requests
 from bs4 import BeautifulSoup
 
-BASE = "https://www.s-journal.co.kr"
-RSS = f"{BASE}/rss/allArticle.xml"
-LIST = f"{BASE}/news/articleList.html?page={{page}}&view_type=sm"
-VIEW = f"{BASE}/news/articleView.html?idxno={{idx}}"
-OUT = Path(__file__).parent / "docs" / "articles.json"
-KEEP_DAYS = 45
+HERE = Path(__file__).parent
+CFG = json.loads((HERE / "config.json").read_text("utf-8"))
+SITE = CFG["site_name"]
+RSS = CFG["rss_url"]
+LIST = CFG["list_url"]
+VIEW = CFG["article_url"]
+BODY_SEL = CFG.get("body_selectors") or ["article"]
+OUT = HERE / "docs" / "articles.json"
+KEEP_DAYS = int(CFG.get("keep_days", 45))
+DELAY = float(CFG.get("request_delay_sec", 0.35))
 KST = timezone(timedelta(hours=9))
-HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; SJournalDupCheck/1.0; +internal desk tool)"}
+HEADERS = {"User-Agent": "Mozilla/5.0 (compatible; DupCheckCollector/1.0; newsroom duplicate-check tool)"}
 
 sess = requests.Session()
 sess.headers.update(HEADERS)
@@ -50,6 +54,7 @@ def save(store):
     arts = sorted(store.values(), key=lambda a: a["date"], reverse=True)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps({
+        "site": SITE,
         "updated": datetime.now(KST).strftime("%Y-%m-%d %H:%M"),
         "count": len(arts),
         "articles": arts,
@@ -75,7 +80,7 @@ def ids_from_list(max_pages=60):
         if not found:
             break
         ids += found
-        time.sleep(0.3)
+        time.sleep(DELAY)
     return ids
 
 
@@ -108,8 +113,12 @@ def parse_article(idx, page):
         h = s.find(["h1", "h2", "h3"], class_=re.compile("heading|title", re.I)) or s.find("h1")
         title = h.get_text(" ", strip=True) if h else f"기사 {idx}"
 
-    node = (s.select_one("#article-view-content-div") or s.select_one("[itemprop=articleBody]")
-            or s.select_one("#articleBody") or s.select_one("article") or s.body)
+    node = None
+    for sel in BODY_SEL:
+        node = s.select_one(sel)
+        if node:
+            break
+    node = node or s.body
     body = text_of(node) if node else ""
     if len(body) < 80:
         # 마지막 수단: <p>가 가장 많이 모인 블록
@@ -187,7 +196,7 @@ def main():
             fetched += 1
             if fetched % 25 == 0:
                 save(store)
-        time.sleep(0.35)
+        time.sleep(DELAY)
     print(f"최신분 {fetched}건 저장")
 
     # 2) 과거 채우기: 기사 번호를 거꾸로 훑는다
@@ -220,7 +229,7 @@ def main():
                         save(store)
                         print(f"  과거 {added}건 (현재 {store[idx]['date']})")
             idx -= 1
-            time.sleep(0.35)
+            time.sleep(DELAY)
         print(f"과거분 {added}건 저장")
 
     # 오래된 기사 정리

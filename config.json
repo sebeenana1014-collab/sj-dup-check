@@ -1,0 +1,15 @@
+{
+  "site_name": "S저널",
+  "base_url": "https://www.s-journal.co.kr",
+  "rss_url": "https://www.s-journal.co.kr/rss/allArticle.xml",
+  "article_url": "https://www.s-journal.co.kr/news/articleView.html?idxno={idx}",
+  "list_url": "https://www.s-journal.co.kr/news/articleList.html?page={page}&view_type=sm",
+  "body_selectors": [
+    "#article-view-content-div",
+    "[itemprop=articleBody]",
+    "#articleBody",
+    "article"
+  ],
+  "keep_days": 45,
+  "request_delay_sec": 0.35
+}

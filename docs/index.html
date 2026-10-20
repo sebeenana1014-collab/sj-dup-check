@@ -166,7 +166,7 @@ async function loadFeed() {
     if (!r.ok) throw new Error(r.status);
     const j = await r.json();
     articles = j.articles || [];
-    el.dataset.s = 'ok'; el.textContent = `기사 ${articles.length}건 · ${j.updated} 수집`;
+    el.dataset.s = 'ok'; el.textContent = `${j.site || ""} 기사 ${articles.length}건 · ${j.updated} 수집`;
     const age = (Date.now() - new Date(j.updated.replace(' ', 'T') + '+09:00').getTime()) / 60000;
     if (age > 90) { el.dataset.s = 'bad'; el.textContent += ` (${Math.round(age / 60)}시간 전, 수집 지연)`; }
   } catch (e) {
