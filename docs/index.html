@@ -67,6 +67,7 @@ input[type="text"] { font: inherit; color: var(--ink); background: var(--bg); bo
 .pill { display: inline-block; font-size: 12px; font-weight: 600; border-radius: 4px; padding: 1px 7px; }
 .p-pub { background: var(--bad-soft); color: var(--bad); } .p-local { background: var(--warn-soft); color: var(--warn); }
 .mono { font-family: var(--f-mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.snip { grid-column: 2; margin: 2px 0 0; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 details.why { font-size: 13px; color: var(--muted); grid-column: 2; } details.why summary { cursor: pointer; }
 details.why ul { margin: 4px 0 0; padding-left: 18px; }
 .recent { margin-top: 24px; }
@@ -146,7 +147,8 @@ function fingerprint(t) { return { g: grams(t), f: facts(t) }; }
 function overlap(a, b) { if (!a.size || !b.size) return 0; let n = 0; const [s, l] = a.size < b.size ? [a, b] : [b, a]; for (const x of s) if (l.has(x)) n++; return n / s.size; }
 function shared(a, b) { const out = []; for (const x of a) if (b.has(x)) out.push(x); return out; }
 function score(fa, fb) { const g = overlap(fa.g, fb.g); const f = Math.min(fa.f.size, fb.f.size) >= 3 ? overlap(fa.f, fb.f) : null; return Math.round((f === null ? g : 0.55 * g + 0.45 * f) * 100); }
-const HI = 45, MID = 25;
+const HI = 50, MID = 30;
+const lead = t => (String(t || '').split('\n').find(s => s.trim().length > 15) || '').slice(0, 110);
 
 // ───── 데이터 ─────
 const $ = id => document.getElementById(id);
@@ -184,10 +186,10 @@ function check() {
   last = { body, ms };
   const top = ms.find(m => m.s >= HI);
   let v;
-  if (top && top.kind === 'pub') v = `<div class="verdict v-bad"><h3>승인 보류: 이미 나간 보도자료입니다</h3><p>${esc(top.a.date)}에 ${esc(top.a.reporter || '')} 기자 이름으로 출고된 기사와 같은 보도자료로 보입니다. 이대로 승인하면 중복 전송입니다.</p></div>`;
-  else if (top) v = `<div class="verdict v-bad"><h3>승인 보류: 방금 승인한 원고와 같은 보도자료입니다</h3><p>${new Date(top.a.ts).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}에 이 화면에서 승인한 원고(${esc(top.a.reporter || '기자 미상')})와 겹칩니다. 아직 사이트에 수집되기 전일 수 있습니다.</p></div>`;
-  else if (ms.length) v = `<div class="verdict v-warn"><h3>비슷한 기사가 있습니다. 확인 후 승인하세요</h3><p>같은 보도자료라고 단정할 정도는 아닙니다. 아래 기사를 열어 비교해 보세요.</p></div>`;
-  else v = `<div class="verdict v-ok"><h3>최근 45일 기사 중 같은 보도자료가 없습니다</h3><p>승인해도 됩니다.</p></div>`;
+  if (top && top.kind === 'pub') v = `<div class="verdict v-bad"><h3>같은 보도자료로 보입니다. 확인하세요</h3><p>${esc(top.a.date)}에 ${esc(top.a.reporter || '')} 기자 기사로 이미 나갔습니다. 아래에서 제목과 겹치는 사실을 보고 판단하세요. 정기 시리즈 기사라면 겹쳐도 정상입니다.</p></div>`;
+  else if (top) v = `<div class="verdict v-bad"><h3>방금 승인한 원고와 겹칩니다</h3><p>${new Date(top.a.ts).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}에 이 화면에서 승인한 원고(${esc(top.a.reporter || '기자 미상')})와 같은 보도자료로 보입니다. 아직 사이트에 수집되기 전입니다.</p></div>`;
+  else if (ms.length) v = `<div class="verdict v-warn"><h3>비슷한 기사가 있습니다</h3><p>같은 보도자료라고 보기엔 약합니다. 아래 제목만 확인하고 넘어가셔도 됩니다.</p></div>`;
+  else v = `<div class="verdict v-ok"><h3>최근 45일 기사 중 겹치는 것이 없습니다</h3><p>승인해도 됩니다.</p></div>`;
   const approve = (!top) ? `<div class="row" style="margin:0 0 16px"><input type="text" id="rep" placeholder="쓴 기자 (선택)" style="width:150px"><button class="btn ghost" id="btn-approve">승인함으로 기록</button><span class="hint">사이트에 수집될 때까지 이 브라우저에서 기억합니다</span></div>` : '';
   box.innerHTML = '<h2>판정</h2>' + v + approve + (ms.length ? '<p class="hint" style="margin:0 0 8px">비슷한 기사</p>' + ms.map(m => card(m, q)).join('') : '');
   const b = $('btn-approve'); if (b) b.onclick = () => {
@@ -199,10 +201,11 @@ function card(m, q) {
   const a = m.a, f = fpOf(a), sf = shared(q.f, f.f).slice(0, 12);
   const when = m.kind === 'pub' ? a.date : new Date(a.ts).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' 승인';
   return `<div class="match">
-    <div class="score ${m.s >= HI ? 'hi' : 'mid'}">${m.s}<small>${m.s >= HI ? '같은 자료' : '의심'}</small></div>
+    <div class="score ${m.s >= HI ? 'hi' : 'mid'}">${m.s}<small>${m.s >= HI ? '겹침 큼' : '비슷함'}</small></div>
     <div class="t">${m.kind === 'pub' ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a>` : esc(a.title)}</div>
     <div class="meta"><span class="pill ${m.kind === 'pub' ? 'p-pub' : 'p-local'}">${m.kind === 'pub' ? '출고됨' : '방금 승인'}</span><span>${esc(a.reporter || '기자 미상')}${a.reporter ? ' 기자' : ''}</span><span class="mono">${esc(when)}</span></div>
-    <details class="why"><summary>겹치는 사실 ${sf.length}개</summary><ul>${sf.map(x => `<li>${esc(x)}</li>`).join('') || '<li>숫자·고유명사 겹침 없음 (문장 유사)</li>'}</ul></details>
+    <p class="snip">${esc(lead(a.body))}…</p>
+    <details class="why"><summary>겹치는 사실 ${sf.length}개</summary><ul>${sf.map(x => `<li>${esc(x)}</li>`).join('') || '<li>숫자·고유명사 겹침 없음 (문장만 유사)</li>'}</ul></details>
   </div>`;
 }
 
