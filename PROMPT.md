@@ -54,7 +54,9 @@ GitHub Actions가 수집기를 돌리고 GitHub Pages가 페이지를 띄운다.
      브라우저로 내려와 그 안에서 비교된다. 와이파이를 끄고 검사해도 작동하는 것이 증거다
 2. 의뢰인이 `github.com/apps/claude/installations/select_target`에서 그 저장소에 앱 설치
 3. AI가 저장소를 세션에 붙이고 복제한다
-4. 이 저장소(`https://github.com/sebeenana1014-collab/sj-dup-check`)의 파일을 전부 복사해 넣는다
+4. 이 저장소의 파일을 복사해 넣는다. **단 `docs/articles.json`은 절대 복사하지 않는다.**
+   그 파일에는 다른 매체의 기사가 들어 있다. 남의 매체 데이터를 새 고객 저장소에 넣으면
+   사고다. 비어 있는 상태로 시작하고 6단계의 수집으로 채운다
 5. 의뢰인이 **Settings → Pages** → Branch `main` / 폴더 `/docs` → Save
 6. 의뢰인이 **Actions → 기사 수집 → Run workflow** → `backfill` 체크 후 실행
 
