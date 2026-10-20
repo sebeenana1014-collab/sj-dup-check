@@ -63,24 +63,19 @@ def ids_from_rss():
     return [int(m) for m in re.findall(r"idxno=(\d+)", xml)]
 
 
-def ids_from_list(max_pages=80, cutoff=None):
-    ids, seen_old = [], 0
+def ids_from_list(max_pages=60):
+    """기사 목록 페이지에서 기사 번호 모으기 (보조 수단)."""
+    ids = []
     for p in range(1, max_pages + 1):
         page = get(LIST.format(page=p))
         if not page:
             break
         found = [int(m) for m in dict.fromkeys(re.findall(r"articleView\.html\?idxno=(\d+)", page))]
+        print(f"  목록 {p}쪽: {len(found)}건")
         if not found:
             break
         ids += found
-        dates = re.findall(r"(\d{4})[.-](\d{2})[.-](\d{2})", page)
-        if cutoff and dates:
-            oldest = min(datetime(int(y), int(m), int(d), tzinfo=KST) for y, m, d in dates)
-            if oldest < cutoff:
-                seen_old += 1
-                if seen_old >= 2:
-                    break
-        time.sleep(0.4)
+        time.sleep(0.3)
     return ids
 
 
@@ -151,45 +146,89 @@ def parse_article(idx, page):
             "reporter": reporter, "date": date, "body": body}
 
 
+def fetch_one(idx, store):
+    """기사 한 건 저장. 반환: 'saved' | 'short' | 'miss'"""
+    page = get(VIEW.format(idx=idx))
+    if not page:
+        return "miss"
+    try:
+        a = parse_article(idx, page)
+    except Exception as e:  # 한 건 실패가 전체를 막지 않게
+        print("  해석 실패", idx, e, file=sys.stderr)
+        return "miss"
+    if len(a["body"]) < 80:
+        return "short"
+    store[idx] = a
+    return "saved"
+
+
 def main():
     backfill = "--backfill" in sys.argv
     store = load()
     cutoff = datetime.now(KST) - timedelta(days=KEEP_DAYS)
+    cut_s = cutoff.strftime("%Y-%m-%d")
+    deadline = time.time() + (32 if backfill else 8) * 60
 
-    ids = ids_from_rss()
-    print(f"RSS: {len(ids)}건")
-    if backfill or not store:
-        more = ids_from_list(cutoff=cutoff)
-        print(f"목록 페이지: {len(more)}건")
-        ids += more
-    new = [i for i in dict.fromkeys(ids) if str(i) not in store and i not in store]
-    print(f"새 기사 {len(new)}건 가져오는 중")
+    rss = ids_from_rss()
+    print(f"RSS: {len(rss)}건")
+    have = set(store)
+    newest = max(rss) if rss else (max(have) if have else 0)
 
+    # 1) RSS에 있는 새 기사 + 빠진 번호 메우기
+    todo = [i for i in rss if i not in have]
+    if have:
+        gap = [i for i in range(max(have) + 1, newest) if i not in have]
+        todo += gap[-300:]
     fetched = 0
-    for idx in new:
-        page = get(VIEW.format(idx=idx))
-        if not page:
-            continue
-        try:
-            a = parse_article(idx, page)
-        except Exception as e:  # 한 건 실패가 전체를 막지 않게
-            print("  parse fail", idx, e, file=sys.stderr)
-            continue
-        if len(a["body"]) < 80:
-            print("  본문 짧음, 건너뜀", idx, file=sys.stderr)
-            continue
-        store[idx] = a
-        fetched += 1
-        if fetched % 25 == 0:
-            save(store)
-        time.sleep(0.4)
+    for idx in sorted(set(todo), reverse=True):
+        if time.time() > deadline:
+            break
+        if fetch_one(idx, store) == "saved":
+            fetched += 1
+            if fetched % 25 == 0:
+                save(store)
+        time.sleep(0.35)
+    print(f"최신분 {fetched}건 저장")
+
+    # 2) 과거 채우기: 기사 번호를 거꾸로 훑는다
+    if backfill and newest:
+        idx = min(have) - 1 if have else newest
+        old_streak = miss_streak = 0
+        added = 0
+        while idx > 0 and time.time() < deadline:
+            if idx in store:
+                idx -= 1
+                continue
+            r = fetch_one(idx, store)
+            if r == "miss":
+                miss_streak += 1
+                if miss_streak >= 80:
+                    print("  빈 번호가 계속돼 중단")
+                    break
+            else:
+                miss_streak = 0
+                if r == "saved":
+                    added += 1
+                    if store[idx]["date"][:10] < cut_s:
+                        old_streak += 1
+                        if old_streak >= 30:
+                            print("  기간을 넘어서 중단")
+                            break
+                    else:
+                        old_streak = 0
+                    if added % 50 == 0:
+                        save(store)
+                        print(f"  과거 {added}건 (현재 {store[idx]['date']})")
+            idx -= 1
+            time.sleep(0.35)
+        print(f"과거분 {added}건 저장")
 
     # 오래된 기사 정리
-    for k in [k for k, a in store.items() if a["date"] < cutoff.strftime("%Y-%m-%d")]:
+    for k in [k for k, a in store.items() if a["date"][:10] < cut_s]:
         del store[k]
 
     save(store)
-    print(f"저장 {fetched}건 추가, 총 {len(store)}건")
+    print(f"총 {len(store)}건 보관 중")
 
 
 if __name__ == "__main__":
