@@ -176,21 +176,45 @@ async function loadFeed() {
 }
 
 // ───── 검사 ─────
+// 원고를 2~3문단짜리 창으로 잘라 둔다. 보도자료에서 몇 문단만 가져다 쓴 경우를 잡기 위한 것.
+const PART = 60;
+function windows(text) {
+  const ps = text.split('\n').map(s => s.trim()).filter(s => s.length > 25);
+  const out = [];
+  for (let w = 2; w <= 3; w++) for (let i = 0; i + w <= ps.length; i++) {
+    const t = ps.slice(i, i + w).join('\n');
+    if (t.length >= 120) out.push({ g: grams(t), at: i + 1 });
+    if (out.length >= 40) return out;
+  }
+  return out;
+}
 let last = null;
 function check() {
   const body = $('draft').value.trim(), box = $('result');
   if (body.length < 40) { box.innerHTML = '<h2>판정</h2><div class="verdict v-warn"><h3>원고가 너무 짧습니다</h3><p>원고 전체를 붙여넣어야 비교할 수 있습니다.</p></div>'; return; }
-  const q = fingerprint(body);
+  box.innerHTML = '<h2>판정</h2><div class="empty">검사하는 중…</div>';
+  setTimeout(() => run(body, box), 16);
+}
+function run(body, box) {
+  const q = fingerprint(body), wins = windows(body);
   const pool = [...articles.map(a => ({ a, kind: 'pub' })), ...local.map(a => ({ a, kind: 'local' }))];
-  const ms = pool.map(x => ({ ...x, s: score(q, fpOf(x.a)) })).filter(m => m.s >= MID).sort((a, b) => b.s - a.s).slice(0, 6);
+  const ms = pool.map(x => {
+    const f = fpOf(x.a);
+    let best = 0, at = 0;
+    for (const w of wins) { const o = overlap(w.g, f.g); if (o > best) { best = o; at = w.at; } }
+    return { ...x, s: score(q, f), part: Math.round(best * 100), at };
+  }).filter(m => m.s >= MID || m.part >= PART)
+    .sort((a, b) => Math.max(b.s, b.part * 0.9) - Math.max(a.s, a.part * 0.9)).slice(0, 6);
   last = { body, ms };
   const top = ms.find(m => m.s >= HI);
+  const lifted = ms.find(m => m.part >= 70 && m !== top);
   let v;
   if (top && top.kind === 'pub') v = `<div class="verdict v-bad"><h3>같은 보도자료로 보입니다. 확인하세요</h3><p>${esc(top.a.date)}에 ${esc(top.a.reporter || '')} 기자 기사로 이미 나갔습니다. 아래에서 제목과 겹치는 사실을 보고 판단하세요. 정기 시리즈 기사라면 겹쳐도 정상입니다.</p></div>`;
   else if (top) v = `<div class="verdict v-bad"><h3>방금 승인한 원고와 겹칩니다</h3><p>${new Date(top.a.ts).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}에 이 화면에서 승인한 원고(${esc(top.a.reporter || '기자 미상')})와 같은 보도자료로 보입니다. 아직 사이트에 수집되기 전입니다.</p></div>`;
+  else if (lifted) v = `<div class="verdict v-bad"><h3>일부 문단이 그대로 겹칩니다</h3><p>원고 전체는 다르지만 ${lifted.at}번째 문단 부근이 ${esc(lifted.a.date)} ${esc(lifted.a.reporter || '')} 기자 기사와 ${lifted.part}% 일치합니다. 같은 보도자료에서 가져온 대목인지 확인하세요.</p></div>`;
   else if (ms.length) v = `<div class="verdict v-warn"><h3>비슷한 기사가 있습니다</h3><p>같은 보도자료라고 보기엔 약합니다. 아래 제목만 확인하고 넘어가셔도 됩니다.</p></div>`;
   else v = `<div class="verdict v-ok"><h3>최근 45일 기사 중 겹치는 것이 없습니다</h3><p>승인해도 됩니다.</p></div>`;
-  const approve = (!top) ? `<div class="row" style="margin:0 0 16px"><input type="text" id="rep" placeholder="쓴 기자 (선택)" style="width:150px"><button class="btn ghost" id="btn-approve">승인함으로 기록</button><span class="hint">사이트에 수집될 때까지 이 브라우저에서 기억합니다</span></div>` : '';
+  const approve = (!top && !lifted) ? `<div class="row" style="margin:0 0 16px"><input type="text" id="rep" placeholder="쓴 기자 (선택)" style="width:150px"><button class="btn ghost" id="btn-approve">승인함으로 기록</button><span class="hint">사이트에 수집될 때까지 이 브라우저에서 기억합니다</span></div>` : '';
   box.innerHTML = '<h2>판정</h2>' + v + approve + (ms.length ? '<p class="hint" style="margin:0 0 8px">비슷한 기사</p>' + ms.map(m => card(m, q)).join('') : '');
   const b = $('btn-approve'); if (b) b.onclick = () => {
     local.unshift({ id: 'local-' + Date.now(), title: body.split('\n').find(s => s.trim()).slice(0, 70), body, reporter: $('rep').value.trim(), ts: Date.now() });
@@ -201,11 +225,11 @@ function card(m, q) {
   const a = m.a, f = fpOf(a), sf = shared(q.f, f.f).slice(0, 12);
   const when = m.kind === 'pub' ? a.date : new Date(a.ts).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' 승인';
   return `<div class="match">
-    <div class="score ${m.s >= HI ? 'hi' : 'mid'}">${m.s}<small>${m.s >= HI ? '겹침 큼' : '비슷함'}</small></div>
+    <div class="score ${m.s >= HI || m.part >= 70 ? 'hi' : 'mid'}">${Math.max(m.s, m.part)}<small>${m.part > m.s ? m.at + '번째 문단' : '전체'}</small></div>
     <div class="t">${m.kind === 'pub' ? `<a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a>` : esc(a.title)}</div>
     <div class="meta"><span class="pill ${m.kind === 'pub' ? 'p-pub' : 'p-local'}">${m.kind === 'pub' ? '출고됨' : '방금 승인'}</span><span>${esc(a.reporter || '기자 미상')}${a.reporter ? ' 기자' : ''}</span><span class="mono">${esc(when)}</span></div>
     <p class="snip">${esc(lead(a.body))}…</p>
-    <details class="why"><summary>겹치는 사실 ${sf.length}개</summary><ul>${sf.map(x => `<li>${esc(x)}</li>`).join('') || '<li>숫자·고유명사 겹침 없음 (문장만 유사)</li>'}</ul></details>
+    <details class="why"><summary>전체 ${m.s}% · 가장 겹치는 문단 ${m.part}% · 겹치는 사실 ${sf.length}개</summary><ul>${sf.map(x => `<li>${esc(x)}</li>`).join('') || '<li>숫자·고유명사 겹침 없음 (문장만 유사)</li>'}</ul></details>
   </div>`;
 }
 
